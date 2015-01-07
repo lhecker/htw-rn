@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -e
+
+pushd $(dirname $0) > /dev/null
+basedir=$(pwd)
+popd > /dev/null
+
+if [[ $# != "1" && $# != "3" ]]; then
+	java -cp "$basedir/bin" UDPServer
+	exit $?
+fi
+
+if [[ $# == "3" ]]; then
+	if hash tc 2>/dev/null; then
+		function cleanup {
+			tc qdisc del dev lo root
+		}
+
+		trap cleanup EXIT
+		tc qdisc add dev lo root netem loss "$2%"
+		tc qdisc add dev lo parent 1:12 netem delay "$3ms"
+	fi
+fi
+
+java -cp "$basedir/bin" UDPServer "$1"
