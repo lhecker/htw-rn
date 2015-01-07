@@ -31,6 +31,7 @@ class UDPClient {
 	private static AtomicLong _finishedBytes = new AtomicLong();
 	private static long _previousBytes;
 	private static long _previousTime;
+	private static int _previousStatWidth = 0;
 
 	static {
 		Random rand = new Random();
@@ -85,10 +86,24 @@ class UDPClient {
 			etaSec %= 60;
 		}
 
-		System.out.printf("\r%3.0f%% [%s] %,d  %s/s  eta %dm %ds          ", percent * 100, bar, finishedBytes, UDPClient.formatSize(speed), etaMin, etaSec);
+		final String stat = String.format("%3.0f%% [%s] %,d  %s/s  eta %dm %ds", percent * 100, bar, finishedBytes, UDPClient.formatSize(speed), etaMin, etaSec);
+		final int statWidth = stat.length();
+		final int statWidthDiff = _previousStatWidth - statWidth;
+		String statWitespacePadding;
+
+		if (statWidthDiff > 0) {
+			final char[] paddingData = new char[statWidthDiff];
+			Arrays.fill(paddingData, ' ');
+			statWitespacePadding = new String(paddingData);
+		} else {
+			statWitespacePadding = "";
+		}
+
+		System.out.printf("\r%s%s", stat, statWitespacePadding);
 
 		_previousTime = time;
 		_previousBytes = finishedBytes;
+		_previousStatWidth = statWidth;
 	}
 
 	private static void send(ByteBuffer txd) throws IOException {
