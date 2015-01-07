@@ -66,6 +66,7 @@ class UDPClient {
 
 		final int barWidth = (int) Math.round(percent * 50);
 		final char[] barData = new char[50];
+		Arrays.fill(barData, barWidth, 50, ' ');
 		Arrays.fill(barData, 0, barWidth, '=');
 
 		if (barWidth > 0 && barWidth < 50) {
@@ -84,7 +85,7 @@ class UDPClient {
 			etaSec %= 60;
 		}
 
-		System.out.printf("\r%3.0f%% [%s] %,d  %s/s  eta %dm %ds", percent * 100, bar, finishedBytes, UDPClient.formatSize(speed), etaMin, etaSec);
+		System.out.printf("\r%3.0f%% [%s] %,d  %s/s  eta %dm %ds          ", percent * 100, bar, finishedBytes, UDPClient.formatSize(speed), etaMin, etaSec);
 
 		_previousTime = time;
 		_previousBytes = finishedBytes;
@@ -145,7 +146,7 @@ class UDPClient {
 		int mtu = Integer.MAX_VALUE;
 
 		/*
-		 *  TODO: Improve the precision of mtu by getting the MTU 
+		 *  TODO: Improve the precision of mtu by getting the MTU
 		 *  of the NIC the packets are going to be sent on.
 		 */
 		while (inets.hasMoreElements()) {
@@ -181,7 +182,7 @@ class UDPClient {
 			System.err.println("[error] Filename too long: '" + filename + "'");
 			return;
 		}
-		
+
 		_totalBytes = file.length();
 
 		// 40 Byte IPv6 Header size + 8 Byte UDP Header size

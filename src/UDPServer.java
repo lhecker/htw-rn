@@ -94,7 +94,7 @@ class UDPServer {
 
 			// TODO: implement dynamic timeouts
 			_socket.setSoTimeout(1000);
-			
+
 			// reset ---> the next call to getNextPacketId() will return 0
 			_packetId = PACKET_ID_MAX;
 
@@ -166,7 +166,7 @@ class UDPServer {
 			 * _rxd.getInt() will return the same value (bitwise), but in a signed representation.
 			 * Thus we can just cast the first one down to an int, to get a correct comparison.
 			 * If we don't, the compiler would promote the (int) h_crc32 to an (long),
-			 * which turns (int)-1 to (long)-1, instead of an positive value [0, 2^32). 
+			 * which turns (int)-1 to (long)-1, instead of an positive value [0, 2^32).
 			 */
 			if (h_crc32 != (int) cc.getValue()) {
 				System.err.println("[error] handshake: invalid checksum");
@@ -251,7 +251,7 @@ class UDPServer {
 						 * _rxd.getInt() will return the same value (bitwise), but in a signed representation.
 						 * Thus we can just cast the first one down to an int, to get a correct comparison.
 						 * If we don't, the compiler would promote the (int) h_crc32 to an (long),
-						 * which turns (int)-1 to (long)-1, instead of an positive value [0, 2^32). 
+						 * which turns (int)-1 to (long)-1, instead of an positive value [0, 2^32).
 						 */
 						if (d_crc32 != (int) cc.getValue()) {
 							throw new Exception("checksum not equal");
