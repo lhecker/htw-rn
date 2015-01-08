@@ -3,12 +3,36 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.CRC32;
 
 class UDPServer extends UDPBase {
+	private static double _packetLoss;
+	private static double _packetDelay;
+	private static double _packetDelayVariation;
+
+	private static boolean simulateDelayAndLoss() {
+		double delay = _packetDelay;
+
+		if (_packetDelayVariation > 0) {
+			delay *= 1.0 + _rand.nextGaussian() * _packetDelayVariation;
+		}
+
+		if (delay > 0.0) {
+			try {
+				Thread.sleep((long) delay);
+			} catch (InterruptedException e) {
+			}
+		}
+
+		return _packetLoss > 0 && _rand.nextDouble() < _packetLoss;
+	}
+
 	private static void receive() throws IOException {
 		int i = 0;
 
@@ -17,21 +41,30 @@ class UDPServer extends UDPBase {
 				_rxd.clear();
 				_socket.receive(_rxp);
 				_rxd.limit(_rxp.getLength());
+
+				if (UDPServer.simulateDelayAndLoss()) {
+					throw new SocketTimeoutException();
+				}
+
 				return;
 			} catch (SocketTimeoutException e) {
-				if (++i == PACKET_RESEND_MAX) {
+				if (++i == PACKET_RETRY_MAX) {
 					throw e;
 				}
 			}
 		}
 	}
 
-	private static void sendACK(SocketAddress address, short sessionId, byte packetId) throws IOException {
+	private static void sendACK(byte packetId) throws IOException {
+		if (UDPServer.simulateDelayAndLoss()) {
+			return;
+		}
+
 		ByteBuffer txd = ByteBuffer.allocate(3);
-		txd.putShort(sessionId);
+		txd.putShort(_sessionId);
 		txd.put(packetId);
 
-		DatagramPacket packet = new DatagramPacket(txd.array(), txd.capacity(), address);
+		DatagramPacket packet = new DatagramPacket(txd.array(), txd.capacity(), _targetAddress);
 		_socket.send(packet);
 	}
 
@@ -60,13 +93,134 @@ class UDPServer extends UDPBase {
 		return file;
 	}
 
+	private static void printHelp() {
+		System.out.println("Usage: server-udp <port> [<loss> <delay> [<veriation>]]");
+		System.out.println("  <port>       The port number the server should listen on.");
+		System.out.println("               This number must be between 0 and 65535");
+		System.out.println("               A value of 0 tells the application to choose a random port.");
+		System.out.println("  <loss>       The average packet loss.");
+		System.out.println("               This must be a number between 0 and 1, or 0% and 100% (inclusive).");
+		System.out.println("  <delay>      The average packet delay in ms.");
+		System.out.println("               Either with or without a ms suffix.");
+		System.out.println("               The default is 0.");
+		System.out.println("  <variation>  The random variation of the delay value.");
+		System.out.println("               This value can either be an absolute amount in ms, or relative to delay");
+		System.out.println("               as a value between 0 and 1, or 0% and 100% (inclusive, the default).");
+		System.out.println("               A variation of 10ms and a delay of 100ms will create a random delay of 100±10ms.");
+		System.out.println("               The default is 10%.");
+	}
+
 	public static void main(String args[]) throws Exception {
-		if (args.length != 1) {
-			System.out.println("Usage: server-udp [port]");
-			return;
+		switch (args.length) {
+		case 1:
+		case 3:
+		case 4:
+			break;
+		default:
+			UDPServer.printHelp();
+			System.exit(1);
 		}
 
-		_socket = new DatagramSocket(Integer.parseInt(args[0]));
+		int port = 0;
+
+		try {
+			port = Integer.parseInt(args[0]);
+
+			if (port < 0 || port > 65535) {
+				throw new Exception();
+			}
+		} catch (Exception e) {
+			System.err.println("port outside of valid range [0, 65535]");
+			UDPServer.printHelp();
+			System.exit(2);
+		}
+
+		if (args.length > 1) {
+			try {
+				Matcher m = Pattern.compile("([\\d.]+)(%)?").matcher(args[1]);
+
+				if (!m.matches()) {
+					throw new Exception();
+				}
+
+				_packetLoss = Double.parseDouble(m.group(1));
+
+				if (!m.group(2).isEmpty()) {
+					_packetLoss /= 100.0;
+				}
+
+				if (_packetLoss < 0 || _packetLoss > 1) {
+					throw new Exception();
+				}
+			} catch (Exception e) {
+				System.err.println("loss outside of valid range [0,1]");
+				UDPServer.printHelp();
+				System.exit(2);
+			}
+
+			try {
+				Matcher m = Pattern.compile("([\\d.]+)(ms)?").matcher(args[2]);
+
+				if (!m.matches()) {
+					throw new Exception();
+				}
+
+				_packetDelay = Double.parseDouble(m.group(1));
+
+				if (_packetDelay < 0) {
+					throw new Exception();
+				}
+			} catch (Exception e) {
+				System.err.println("delay outside of valid range [0,∞)ms");
+				UDPServer.printHelp();
+				System.exit(2);
+			}
+
+			if (args.length > 3) {
+				try {
+					Matcher m = Pattern.compile("([\\d.]+)(%|ms)?").matcher(args[1]);
+
+					if (!m.matches()) {
+						throw new Exception();
+					}
+
+					_packetDelayVariation = Double.parseDouble(m.group(1));
+
+					if (_packetDelayVariation < 0) {
+						throw new Exception();
+					}
+
+					// if it doesn't end in "ms" we default to a variation relative to the delay
+					String suffix = m.group(2);
+
+					if (suffix.isEmpty()) {
+						if (_packetDelayVariation > 1.0) {
+							throw new Exception();
+						}
+
+						_packetDelayVariation = _packetDelayVariation * _packetDelay;
+					} else if (suffix.equals("%")) {
+						if (_packetDelayVariation > 100.0) {
+							throw new Exception();
+						}
+
+						_packetDelayVariation = (_packetDelayVariation / 100.0) * _packetDelay;
+					}
+				} catch (Exception e) {
+					System.err.println("variation outside of valid range [0,∞)ms, [0,1], or [0,100]%");
+					UDPServer.printHelp();
+					System.exit(2);
+				}
+			}
+		}
+
+		try {
+			_socket = new DatagramSocket(port);
+		} catch (Exception e) {
+			System.err.println("Failed to create an DatagramSocket!");
+			System.err.println(e.getMessage());
+			System.exit(3);
+		}
 
 		// Java's CRC32 uses the IEEE 0x04C11DB7 polynomial
 		final CRC32 cc = new CRC32();
@@ -77,7 +231,7 @@ class UDPServer extends UDPBase {
 			_socket.setSoTimeout(0);
 			UDPServer.receive();
 
-			final SocketAddress h_address = _rxp.getSocketAddress();
+			_targetAddress = (InetSocketAddress) _rxp.getSocketAddress();
 
 			// TODO: implement dynamic timeouts
 			_socket.setSoTimeout(1000);
@@ -160,7 +314,9 @@ class UDPServer extends UDPBase {
 				continue mainloop;
 			}
 
-			UDPServer.sendACK(h_address, h_sessionId, h_packetId);
+			_sessionId = h_sessionId;
+
+			UDPServer.sendACK(h_packetId);
 
 			final File file = UDPServer.createFileForFilenameWish(h_filename);
 
@@ -182,7 +338,7 @@ class UDPServer extends UDPBase {
 
 					SocketAddress d_address = _rxp.getSocketAddress();
 
-					if (!d_address.equals(h_address)) {
+					if (!d_address.equals(_targetAddress)) {
 						System.err.println("[warning] data: interference from another client " + d_address.toString());
 						continue;
 					}
@@ -198,12 +354,13 @@ class UDPServer extends UDPBase {
 					d_sessionId = _rxd.getShort();
 					d_packetId = _rxd.get();
 
-					if (d_sessionId != h_sessionId) {
+					if (d_sessionId != _sessionId) {
 						throw new Exception("invalid session id");
 					}
 
 					if (d_packetId != UDPServer.getNextPacketId()) {
-						throw new Exception("invalid packet id");
+						System.err.println("[warning] data: invalid packet id");
+						continue;
 					}
 
 					int dataLength = _rxd.remaining();
@@ -245,7 +402,7 @@ class UDPServer extends UDPBase {
 						}
 					}
 
-					UDPServer.sendACK(h_address, d_sessionId, d_packetId);
+					UDPServer.sendACK(d_packetId);
 				}
 			} catch (Exception e) {
 				System.err.println("[error] data: " + e.getMessage());

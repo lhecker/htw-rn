@@ -9,17 +9,12 @@ import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Enumeration;
-import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
 class UDPClient extends UDPBase {
-	private static InetSocketAddress _targetAddress;
-
-	protected static short _sessionId;
-
 	private static long _totalBytes;
 	private static AtomicLong _finishedBytes = new AtomicLong();
 	private static long _previousBytes;
@@ -59,7 +54,7 @@ class UDPClient extends UDPBase {
 
 				break;
 			} catch (SocketTimeoutException e) {
-				if (++i == PACKET_RESEND_MAX) {
+				if (++i == PACKET_RETRY_MAX) {
 					throw e;
 				}
 			}
@@ -240,9 +235,9 @@ class UDPClient extends UDPBase {
 				cc.update(txd.array(), txd.position(), n);
 				txd.limit(txd.position() + n);
 
-				_finishedBytes.addAndGet(n);
-
 				UDPClient.send(txd);
+
+				_finishedBytes.addAndGet(n);
 			}
 
 			fin.close();
