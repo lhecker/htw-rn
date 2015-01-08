@@ -226,24 +226,38 @@ class UDPClient extends UDPBase {
 				txd.putShort(_sessionId);
 				txd.put(UDPClient.getNextPacketId());
 
-				int n = fin.read(txd.array(), txd.position(), txd.remaining());
+				int remaining = txd.remaining();
+				int n = fin.read(txd.array(), txd.position(), remaining);
 
 				if (n == -1) {
 					break;
 				}
 
 				cc.update(txd.array(), txd.position(), n);
-				txd.limit(txd.position() + n);
+				txd.position(txd.position() + n);
+
+				if (n < remaining) {
+					remaining = txd.remaining();
+					n = fin.read(txd.array(), txd.position(), remaining);
+
+					if (n != -1) {
+						cc.update(txd.array(), txd.position(), n);
+						txd.position(txd.position() + n);
+					} else if (remaining >= 4) {
+						break;
+					}
+				}
+
+				txd.limit(txd.position());
 
 				UDPClient.send(txd);
 
 				_finishedBytes.addAndGet(n);
 			}
 
-			fin.close();
-
 			txd.putInt((int) cc.getValue());
-			txd.flip();
+			txd.limit(txd.position());
+
 			send(txd);
 
 			UDPClient.showStats();
