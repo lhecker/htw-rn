@@ -8,20 +8,7 @@ import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
 
-class UDPServer {
-	private static final byte PACKET_ID_MAX = 1;
-	private static final byte PACKET_RESEND_MAX = 10;
-
-	private static ByteBuffer _rxd = ByteBuffer.allocate(64 * 1024);
-	private static DatagramPacket _rxp = new DatagramPacket(_rxd.array(), _rxd.capacity());
-	private static DatagramSocket _socket;
-	private static byte _packetId = PACKET_ID_MAX;
-
-	private static byte getNextPacketId() {
-		_packetId = (byte) ((_packetId + 1) % (PACKET_ID_MAX + 1));
-		return _packetId;
-	}
-
+class UDPServer extends UDPBase {
 	private static void receive() throws IOException {
 		int i = 0;
 

@@ -15,32 +15,55 @@ import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
-class UDPClient {
-	private static final byte PACKET_ID_MAX = 1;
-	private static final byte PACKET_RESEND_MAX = 10;
-
-	private static ByteBuffer _rxd = ByteBuffer.allocate(64 * 1024);
-	private static DatagramPacket _rxp = new DatagramPacket(_rxd.array(), _rxd.capacity());
-	private static DatagramSocket _socket;
+class UDPClient extends UDPBase {
 	private static InetSocketAddress _targetAddress;
 
-	private static short _sessionId = 0;
-	private static byte _packetId = PACKET_ID_MAX;
+	protected static short _sessionId;
 
 	private static long _totalBytes;
 	private static AtomicLong _finishedBytes = new AtomicLong();
 	private static long _previousBytes;
 	private static long _previousTime;
-	private static int _previousStatWidth = 0;
+	private static int _previousStatWidth;
 
 	static {
-		Random rand = new Random();
-		_sessionId = (short) rand.nextInt(0x10000);
+		_sessionId = (short) _rand.nextInt(0x10000);
 	}
 
-	private static byte getNextPacketId() {
-		_packetId = (byte) ((_packetId + 1) % (PACKET_ID_MAX + 1));
-		return _packetId;
+	private static void send(ByteBuffer txd) throws IOException {
+		DatagramPacket txp = new DatagramPacket(txd.array(), txd.limit(), _targetAddress);
+		int i = 0;
+
+		while (true) {
+			try {
+				_socket.send(txp);
+
+				_rxd.clear();
+				_socket.receive(_rxp);
+				_rxd.limit(_rxp.getLength());
+
+				if (_rxd.limit() != 3) {
+					throw new IOException("ACK: invalid size");
+				}
+
+				short sessionId = _rxd.getShort();
+				byte packetId = _rxd.get();
+
+				if (sessionId != _sessionId) {
+					throw new IOException("ACK: invalid session id");
+				}
+
+				if (packetId != _packetId) {
+					throw new IOException("ACK: invalid packet id");
+				}
+
+				break;
+			} catch (SocketTimeoutException e) {
+				if (++i == PACKET_RESEND_MAX) {
+					throw e;
+				}
+			}
+		}
 	}
 
 	private static String formatSize(double size) {
@@ -106,45 +129,9 @@ class UDPClient {
 		_previousStatWidth = statWidth;
 	}
 
-	private static void send(ByteBuffer txd) throws IOException {
-		DatagramPacket txp = new DatagramPacket(txd.array(), txd.limit(), _targetAddress);
-		int i = 0;
-
-		while (true) {
-			try {
-				_socket.send(txp);
-
-				_rxd.clear();
-				_socket.receive(_rxp);
-				_rxd.limit(_rxp.getLength());
-
-				if (_rxd.limit() != 3) {
-					throw new IOException("ACK: invalid size");
-				}
-
-				short sessionId = _rxd.getShort();
-				byte packetId = _rxd.get();
-
-				if (sessionId != _sessionId) {
-					throw new IOException("ACK: invalid session id");
-				}
-
-				if (packetId != _packetId) {
-					throw new IOException("ACK: invalid packet id");
-				}
-
-				break;
-			} catch (SocketTimeoutException e) {
-				if (++i == PACKET_RESEND_MAX) {
-					throw e;
-				}
-			}
-		}
-	}
-
 	public static void main(String args[]) throws Exception {
 		if (args.length != 3) {
-			System.out.println("Usage: client-udp [host] [port] [filepath]");
+			System.out.println("Usage: client-udp <host> <port> <filepath>");
 			return;
 		}
 
