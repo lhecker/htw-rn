@@ -35,7 +35,7 @@ class UDPServer extends UDPBase {
 		_socket.send(packet);
 	}
 
-	private static File discoverFile(byte[] f) throws Exception {
+	private static File createFileForFilenameWish(byte[] f) throws Exception {
 		String filename = new String(f, "UTF-8");
 		File file = new File(filename);
 
@@ -162,7 +162,7 @@ class UDPServer extends UDPBase {
 
 			UDPServer.sendACK(h_address, h_sessionId, h_packetId);
 
-			final File file = UDPServer.discoverFile(h_filename);
+			final File file = UDPServer.createFileForFilenameWish(h_filename);
 
 			try (final FileOutputStream fout = new FileOutputStream(file)) {
 				long remaining = h_length;
