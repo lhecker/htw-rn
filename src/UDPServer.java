@@ -20,12 +20,12 @@ class UDPServer extends UDPBase {
 		double delay = _packetDelay;
 
 		if (_packetDelayVariation > 0) {
-			delay *= 1.0 + _rand.nextGaussian() * _packetDelayVariation;
+			delay += _rand.nextGaussian() * _packetDelayVariation;
 		}
 
 		if (delay > 0.0) {
 			try {
-				Thread.sleep((long) delay);
+				Thread.sleep((long) Math.round(delay));
 			} catch (InterruptedException e) {
 			}
 		}
@@ -145,11 +145,11 @@ class UDPServer extends UDPBase {
 
 				_packetLoss = Double.parseDouble(m.group(1));
 
-				if (!m.group(2).isEmpty()) {
+				if (m.group(2) != null) {
 					_packetLoss /= 100.0;
 				}
 
-				if (_packetLoss < 0 || _packetLoss > 1) {
+				if (_packetLoss > 1) {
 					throw new Exception();
 				}
 			} catch (Exception e) {
@@ -166,10 +166,6 @@ class UDPServer extends UDPBase {
 				}
 
 				_packetDelay = Double.parseDouble(m.group(1));
-
-				if (_packetDelay < 0) {
-					throw new Exception();
-				}
 			} catch (Exception e) {
 				System.err.println("delay outside of valid range [0,∞)ms");
 				UDPServer.printHelp();
@@ -178,7 +174,7 @@ class UDPServer extends UDPBase {
 
 			if (args.length > 3) {
 				try {
-					Matcher m = Pattern.compile("([\\d.]+)(%|ms)?").matcher(args[1]);
+					Matcher m = Pattern.compile("([\\d.]+)(%|ms)?").matcher(args[3]);
 
 					if (!m.matches()) {
 						throw new Exception();
@@ -186,14 +182,9 @@ class UDPServer extends UDPBase {
 
 					_packetDelayVariation = Double.parseDouble(m.group(1));
 
-					if (_packetDelayVariation < 0) {
-						throw new Exception();
-					}
-
-					// if it doesn't end in "ms" we default to a variation relative to the delay
 					String suffix = m.group(2);
 
-					if (suffix.isEmpty()) {
+					if (suffix == null) {
 						if (_packetDelayVariation > 1.0) {
 							throw new Exception();
 						}
