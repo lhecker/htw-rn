@@ -25,6 +25,19 @@ class UDPClient extends UDPBase {
 		_sessionId = (short) _rand.nextInt(0x10000);
 	}
 
+	protected static void updateSoTimeout(int factor) {
+		try {
+			int timeout = _socket.getSoTimeout();
+
+			if (timeout >= PACKET_TIMEOUT_MIN && timeout <= PACKET_TIMEOUT_MAX) {
+				timeout += PACKET_TIMEOUT_STEP * factor;
+				timeout = timeout < PACKET_TIMEOUT_MIN ? PACKET_TIMEOUT_MIN : timeout > PACKET_TIMEOUT_MAX ? PACKET_TIMEOUT_MAX : timeout;
+				_socket.setSoTimeout(timeout);
+			}
+		} catch (Exception e) {
+		}
+	}
+
 	private static void send(ByteBuffer txd) throws IOException {
 		DatagramPacket txp = new DatagramPacket(txd.array(), txd.limit(), _targetAddress);
 		int i = 0;
@@ -49,14 +62,19 @@ class UDPClient extends UDPBase {
 				}
 
 				if (packetId != _packetId) {
-					throw new IOException("ACK: invalid packet id");
+					System.err.println("[warning] data: invalid packet id");
+					continue;
 				}
+
+				UDPClient.updateSoTimeout(-1);
 
 				break;
 			} catch (SocketTimeoutException e) {
-				if (++i == PACKET_RETRY_MAX) {
+				if (++i == UDPBase.PACKET_RETRY_MAX) {
 					throw e;
 				}
+
+				UDPClient.updateSoTimeout(i);
 			}
 		}
 	}
@@ -158,8 +176,10 @@ class UDPClient extends UDPBase {
 			mtu = 1500;
 		}
 
-		// As per RFC 791:
-		// "Every internet module must be able to forward a datagram of 68 octets without further fragmentation."
+		/* As per RFC 791:
+		 * "Every internet module must be able to forward
+		 * a datagram of 68 octets without further fragmentation."
+		 */
 		if (mtu < 68) {
 			System.err.println("[error] MTU smaller than required IPv4 minimum size.");
 			return;
@@ -193,10 +213,12 @@ class UDPClient extends UDPBase {
 		try (final FileInputStream fin = new FileInputStream(file)) {
 			System.out.print("Connecting to " + _targetAddress.getAddress().getHostAddress() + ":" + _targetAddress.getPort() + "... ");
 
+			_previousTime = System.nanoTime();
+
 			// the handshake header fields
 			txd = ByteBuffer.allocate(2 + 1 + 5 + 8 + 2 + filenameData.length + 4);
 			txd.putShort(_sessionId);
-			txd.put(UDPClient.getNextPacketId());
+			txd.put(UDPBase.getNextPacketId());
 			txd.put(new byte[] { 'S', 't', 'a', 'r', 't' });
 			txd.putLong(_totalBytes);
 			txd.putShort((short) filenameData.length);
@@ -213,9 +235,8 @@ class UDPClient extends UDPBase {
 			cc.reset();
 			txd = ByteBuffer.allocate(mtu);
 
-			_previousTime = System.nanoTime();
-
 			timer.schedule(new TimerTask() {
+				@Override
 				public void run() {
 					UDPClient.showStats();
 				}
@@ -224,7 +245,7 @@ class UDPClient extends UDPBase {
 			while (true) {
 				txd.clear();
 				txd.putShort(_sessionId);
-				txd.put(UDPClient.getNextPacketId());
+				txd.put(UDPBase.getNextPacketId());
 
 				int remaining = txd.remaining();
 				int n = fin.read(txd.array(), txd.position(), remaining);
@@ -258,7 +279,7 @@ class UDPClient extends UDPBase {
 			txd.putInt((int) cc.getValue());
 			txd.limit(txd.position());
 
-			send(txd);
+			UDPClient.send(txd);
 
 			UDPClient.showStats();
 			System.out.println();

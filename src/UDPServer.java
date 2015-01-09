@@ -16,6 +16,20 @@ class UDPServer extends UDPBase {
 	private static double _packetDelay;
 	private static double _packetDelayVariation;
 
+	/**
+	 * Used in a testing environment to simulate packet delay and loss.
+	 *
+	 * Use this function in the beginning of functions that receive or send data.
+	 * This function will first put the current thread to sleep
+	 * for a random amount of time obtained using the
+	 * _packetDelay and _packetDelayVariation values.
+	 * The delay is normally distributed around the _packetDelay value.
+	 * After that the function will return a value, specifying
+	 * if the packet should be dropped. This value is obtained using
+	 * the _packetLoss value and uniformly distributed.
+	 *
+	 * @return true if the packet should be dropped, otherwise false.
+	 */
 	private static boolean simulateDelayAndLoss() {
 		double delay = _packetDelay;
 
@@ -33,39 +47,36 @@ class UDPServer extends UDPBase {
 		return _packetLoss > 0 && _rand.nextDouble() < _packetLoss;
 	}
 
+	/**
+	 * Tries to receive a single packet.
+	 *
+	 * This function will try to receive a packet.
+	 *
+	 * @throws IOException
+	 */
 	private static void receive() throws IOException {
-		int i = 0;
-
-		while (true) {
-			try {
-				_rxd.clear();
-				_socket.receive(_rxp);
-				_rxd.limit(_rxp.getLength());
-
-				if (UDPServer.simulateDelayAndLoss()) {
-					throw new SocketTimeoutException();
-				}
-
-				return;
-			} catch (SocketTimeoutException e) {
-				if (++i == PACKET_RETRY_MAX) {
-					throw e;
-				}
-			}
-		}
+		do {
+			_rxd.clear();
+			_socket.receive(_rxp);
+			_rxd.limit(_rxp.getLength());
+		} while (UDPServer.simulateDelayAndLoss());
 	}
 
+	/**
+	 * Sends a single ACK to the current client.
+	 *
+	 * @param packetId The packet which should be acknowledged.
+	 * @throws IOException
+	 */
 	private static void sendACK(byte packetId) throws IOException {
-		if (UDPServer.simulateDelayAndLoss()) {
-			return;
+		if (!UDPServer.simulateDelayAndLoss()) {
+			ByteBuffer txd = ByteBuffer.allocate(3);
+			txd.putShort(_sessionId);
+			txd.put(packetId);
+
+			DatagramPacket packet = new DatagramPacket(txd.array(), txd.capacity(), _targetAddress);
+			_socket.send(packet);
 		}
-
-		ByteBuffer txd = ByteBuffer.allocate(3);
-		txd.putShort(_sessionId);
-		txd.put(packetId);
-
-		DatagramPacket packet = new DatagramPacket(txd.array(), txd.capacity(), _targetAddress);
-		_socket.send(packet);
 	}
 
 	private static File createFileForFilenameWish(byte[] f) throws Exception {
@@ -221,14 +232,12 @@ class UDPServer extends UDPBase {
 		while (true) {
 			_socket.setSoTimeout(0);
 			UDPServer.receive();
+			_socket.setSoTimeout(UDPBase.PACKET_TIMEOUT_SUM);
 
 			_targetAddress = (InetSocketAddress) _rxp.getSocketAddress();
 
-			// TODO: implement dynamic timeouts
-			_socket.setSoTimeout(1000);
-
 			// reset ---> the next call to getNextPacketId() will return 0
-			_packetId = PACKET_ID_MAX;
+			_packetId = UDPBase.PACKET_ID_MAX;
 
 			/*
 			 * The handshake header fields:
