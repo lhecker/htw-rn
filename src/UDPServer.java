@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.regex.Matcher;
@@ -322,18 +321,16 @@ class UDPServer extends UDPBase {
 
 			try (final FileOutputStream fout = new FileOutputStream(file)) {
 				long remaining = h_length;
-				long lastValidPacketTime = System.nanoTime();
 
 				cc.reset();
 
+				/*
+				 * Only allow packets from the current client,
+				 * ignoring interference from others.
+				 */
+				_socket.connect(_targetAddress);
+
 				while (remaining >= 0) {
-					long time = System.nanoTime();
-					long timeDiff = (time - lastValidPacketTime) / 1000000;
-					
-					if (timeDiff > PACKET_TIMEOUT_SUM) {
-						throw new Exception("timeout");
-					}
-					
 					short d_sessionId;
 					byte d_packetId;
 					int d_crc32;
@@ -342,13 +339,6 @@ class UDPServer extends UDPBase {
 						UDPServer.receive();
 					} catch (SocketTimeoutException e) {
 						throw new Exception("timeout");
-					}
-
-					SocketAddress d_address = _rxp.getSocketAddress();
-
-					if (!d_address.equals(_targetAddress)) {
-						System.err.println("[warning] data: interference from another client " + d_address.toString());
-						continue;
 					}
 
 					/*
@@ -370,8 +360,6 @@ class UDPServer extends UDPBase {
 						System.err.println("[warning] data: invalid packet id");
 						continue;
 					}
-					
-					lastValidPacketTime = time;
 
 					int dataLength = _rxd.remaining();
 
@@ -417,6 +405,8 @@ class UDPServer extends UDPBase {
 			} catch (Exception e) {
 				System.err.println("[error] data: " + e.getMessage());
 				file.delete();
+			} finally {
+				_socket.disconnect();
 			}
 		}
 	}

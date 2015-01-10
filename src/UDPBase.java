@@ -35,7 +35,7 @@ public class UDPBase {
 
 	protected static short _sessionId;
 	protected static byte _packetId = PACKET_ID_MAX;
-	
+
 	static {
 		int sum = 0;
 		int partialSum = PACKET_TIMEOUT_MIN;

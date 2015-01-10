@@ -33,7 +33,7 @@ class UDPClient extends UDPBase {
 		if (rtt < 0) {
 			return;
 		}
-		
+
 		if (_srtt == Integer.MAX_VALUE) {
 			_rttvar = rtt / 2;
 			_srtt = rtt;
@@ -188,7 +188,7 @@ class UDPClient extends UDPBase {
 		}
 
 		_socket = new DatagramSocket();
-		_socket.setSoTimeout(1000);
+		_socket.setSoTimeout(PACKET_TIMEOUT_MAX);
 		_targetAddress = new InetSocketAddress(args[0], Short.parseShort(args[1]));
 
 		if (_targetAddress.isUnresolved()) {
@@ -323,6 +323,7 @@ class UDPClient extends UDPBase {
 			UDPClient.showStats();
 			System.out.println();
 		} catch (Exception e) {
+			System.out.println();
 			System.out.println();
 			System.err.println("[error] " + e.getMessage());
 		} finally {
