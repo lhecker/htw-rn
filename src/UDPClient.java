@@ -21,19 +21,52 @@ class UDPClient extends UDPBase {
 	private static long _previousTime;
 	private static int _previousStatWidth;
 
+	protected static int _srtt = Integer.MAX_VALUE;
+	protected static int _rttvar;
+	protected static int _rto = PACKET_TIMEOUT_MAX;
+
 	static {
 		_sessionId = (short) _rand.nextInt(0x10000);
 	}
 
-	protected static void updateSoTimeout(int factor) {
-		try {
-			int timeout = _socket.getSoTimeout();
+	protected static void updateRtoWithRtt(int rtt) {
+		if (rtt < 0) {
+			return;
+		}
+		
+		if (_srtt == Integer.MAX_VALUE) {
+			_rttvar = rtt / 2;
+			_srtt = rtt;
+			_rto = _srtt + 4 * _rttvar;
+		} else {
+			_rttvar = (3 * _rttvar + Math.abs(_srtt - rtt)) / 4;
+			_srtt = (7 * _srtt + rtt) / 8;
+			_rto = _srtt + 4 * _rttvar;
+		}
 
-			if (timeout >= PACKET_TIMEOUT_MIN && timeout <= PACKET_TIMEOUT_MAX) {
-				timeout += PACKET_TIMEOUT_STEP * factor;
-				timeout = timeout < PACKET_TIMEOUT_MIN ? PACKET_TIMEOUT_MIN : timeout > PACKET_TIMEOUT_MAX ? PACKET_TIMEOUT_MAX : timeout;
-				_socket.setSoTimeout(timeout);
-			}
+		_rto += PACKET_TIMEOUT_MIN;
+
+		if (_rto > PACKET_TIMEOUT_MAX) {
+			_rto = PACKET_TIMEOUT_MAX;
+		}
+
+		try {
+			_socket.setSoTimeout(_rto);
+		} catch (Exception e) {
+		}
+	}
+
+	protected static void updateRtoWithTimeout() {
+		_rto *= 2;
+
+		if (_rto < PACKET_TIMEOUT_MIN) {
+			_rto = PACKET_TIMEOUT_MIN;
+		} else if (_rto > PACKET_TIMEOUT_MAX) {
+			_rto = PACKET_TIMEOUT_MAX;
+		}
+
+		try {
+			_socket.setSoTimeout(_rto);
 		} catch (Exception e) {
 		}
 	}
@@ -41,6 +74,8 @@ class UDPClient extends UDPBase {
 	private static void send(ByteBuffer txd) throws IOException {
 		DatagramPacket txp = new DatagramPacket(txd.array(), txd.limit(), _targetAddress);
 		int i = 0;
+
+		long time1 = System.nanoTime();
 
 		while (true) {
 			try {
@@ -66,7 +101,11 @@ class UDPClient extends UDPBase {
 					continue;
 				}
 
-				UDPClient.updateSoTimeout(-1);
+				if (i == 0) {
+					long time2 = System.nanoTime();
+					int rtt = (int) ((time2 - time1) / 1000000);
+					UDPClient.updateRtoWithRtt(rtt);
+				}
 
 				break;
 			} catch (SocketTimeoutException e) {
@@ -74,7 +113,7 @@ class UDPClient extends UDPBase {
 					throw e;
 				}
 
-				UDPClient.updateSoTimeout(i);
+				UDPClient.updateRtoWithTimeout();
 			}
 		}
 	}

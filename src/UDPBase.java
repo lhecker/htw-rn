@@ -7,8 +7,8 @@ import java.util.Random;
 public class UDPBase {
 	protected static final int PACKET_ID_MAX = 1;
 	protected static final int PACKET_RETRY_MAX = 10;
-	protected static final int PACKET_TIMEOUT_MIN = 1;
-	protected static final int PACKET_TIMEOUT_MAX = 2000;
+	protected static final int PACKET_TIMEOUT_MIN = 10;
+	protected static final int PACKET_TIMEOUT_MAX = 3000;
 
 	/*
 	 * We assume that updateSoTimeout(i) will be called
