@@ -322,10 +322,18 @@ class UDPServer extends UDPBase {
 
 			try (final FileOutputStream fout = new FileOutputStream(file)) {
 				long remaining = h_length;
+				long lastValidPacketTime = System.nanoTime();
 
 				cc.reset();
 
 				while (remaining >= 0) {
+					long time = System.nanoTime();
+					long timeDiff = (time - lastValidPacketTime) / 1000000;
+					
+					if (timeDiff > PACKET_TIMEOUT_SUM) {
+						throw new Exception("timeout");
+					}
+					
 					short d_sessionId;
 					byte d_packetId;
 					int d_crc32;
@@ -362,6 +370,8 @@ class UDPServer extends UDPBase {
 						System.err.println("[warning] data: invalid packet id");
 						continue;
 					}
+					
+					lastValidPacketTime = time;
 
 					int dataLength = _rxd.remaining();
 
