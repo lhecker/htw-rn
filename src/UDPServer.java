@@ -231,12 +231,11 @@ class UDPServer extends UDPBase {
 		while (true) {
 			_socket.setSoTimeout(0);
 			UDPServer.receive();
-			_socket.setSoTimeout(UDPBase.PACKET_TIMEOUT_SUM);
+			_socket.setSoTimeout(PACKET_TIMEOUT_SERVER);
 
 			_targetAddress = (InetSocketAddress) _rxp.getSocketAddress();
 
-			// reset ---> the next call to getNextPacketId() will return 0
-			_packetId = UDPBase.PACKET_ID_MAX;
+			UDPServer.resetPacketId();
 
 			/*
 			 * The handshake header fields:
@@ -262,7 +261,7 @@ class UDPServer extends UDPBase {
 			final byte h_packetId = _rxd.get();
 
 			// as per specification the handshake must have a packet ID of 0
-			if (h_packetId != UDPServer.getNextPacketId()) {
+			if (h_packetId != UDPServer.packetId()) {
 				System.err.println("[error] handshake: invalid packet id");
 				continue mainloop;
 			}
@@ -321,6 +320,7 @@ class UDPServer extends UDPBase {
 
 			try (final FileOutputStream fout = new FileOutputStream(file)) {
 				long remaining = h_length;
+				long lastValidPacketTime = System.nanoTime();
 
 				cc.reset();
 
@@ -331,10 +331,13 @@ class UDPServer extends UDPBase {
 				_socket.connect(_targetAddress);
 
 				while (remaining >= 0) {
-					short d_sessionId;
-					byte d_packetId;
-					int d_crc32;
-
+					final long time = System.nanoTime();
+					final long timeDiff = (time - lastValidPacketTime) / 1000000;
+					
+					if (timeDiff > PACKET_TIMEOUT_SERVER) {
+						throw new Exception("timeout");
+					}
+					
 					try {
 						UDPServer.receive();
 					} catch (SocketTimeoutException e) {
@@ -349,17 +352,20 @@ class UDPServer extends UDPBase {
 						throw new Exception("too small");
 					}
 
-					d_sessionId = _rxd.getShort();
-					d_packetId = _rxd.get();
+					short d_sessionId = _rxd.getShort();
+					byte d_packetId = _rxd.get();
 
 					if (d_sessionId != _sessionId) {
 						throw new Exception("invalid session id");
 					}
 
-					if (d_packetId != UDPServer.getNextPacketId()) {
-						System.err.println("[warning] data: invalid packet id");
+					if (d_packetId != UDPServer.nextPacketId()) {
+						UDPServer.sendACK(d_packetId);
 						continue;
 					}
+					
+					UDPServer.setPacketId(d_packetId);
+					lastValidPacketTime = time;
 
 					int dataLength = _rxd.remaining();
 
@@ -385,7 +391,7 @@ class UDPServer extends UDPBase {
 					}
 
 					if (remaining == -4) {
-						d_crc32 = _rxd.getInt(_rxd.position() + dataLength);
+						int d_crc32 = _rxd.getInt(_rxd.position() + dataLength);
 
 						/*
 						 * Casting cc.getValue() down to int is very important.

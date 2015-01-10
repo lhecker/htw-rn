@@ -96,8 +96,7 @@ class UDPClient extends UDPBase {
 					throw new IOException("ACK: invalid session id");
 				}
 
-				if (packetId != _packetId) {
-					System.err.println("[warning] data: invalid packet id");
+				if (packetId != UDPClient.packetId()) {
 					continue;
 				}
 
@@ -257,7 +256,7 @@ class UDPClient extends UDPBase {
 			// the handshake header fields
 			txd = ByteBuffer.allocate(2 + 1 + 5 + 8 + 2 + filenameData.length + 4);
 			txd.putShort(_sessionId);
-			txd.put(UDPBase.getNextPacketId());
+			txd.put(UDPServer.packetId());
 			txd.put(new byte[] { 'S', 't', 'a', 'r', 't' });
 			txd.putLong(_totalBytes);
 			txd.putShort((short) filenameData.length);
@@ -284,7 +283,7 @@ class UDPClient extends UDPBase {
 			while (true) {
 				txd.clear();
 				txd.putShort(_sessionId);
-				txd.put(UDPBase.getNextPacketId());
+				txd.put(UDPServer.setPacketIdToNext());
 
 				int remaining = txd.remaining();
 				int n = fin.read(txd.array(), txd.position(), remaining);
