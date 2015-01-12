@@ -5,7 +5,6 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
-import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Enumeration;
@@ -77,44 +76,52 @@ class UDPClient extends UDPBase {
 
 		long time1 = System.nanoTime();
 
-		while (true) {
+		do {
 			try {
 				_socket.send(txp);
 
-				_rxd.clear();
-				_socket.receive(_rxp);
-				_rxd.limit(_rxp.getLength());
+				do {
+					_rxd.clear();
+					_socket.receive(_rxp);
+					_rxd.limit(_rxp.getLength());
 
-				if (_rxd.limit() != 3) {
-					throw new IOException("ACK: invalid size");
-				}
+					if (_rxd.limit() != 3) {
+						throw new IOException("ACK: invalid size");
+					}
 
-				short sessionId = _rxd.getShort();
-				byte packetId = _rxd.get();
+					short sessionId = _rxd.getShort();
+					byte packetId = _rxd.get();
 
-				if (sessionId != _sessionId) {
-					throw new IOException("ACK: invalid session id");
-				}
+					if (sessionId != _sessionId) {
+						throw new IOException("ACK: invalid session id");
+					}
 
-				if (packetId != UDPClient.packetId()) {
-					continue;
-				}
+					if (packetId != UDPClient.packetId()) {
+						if (++i >= UDPBase.PACKET_RETRY_MAX) {
+							throw new IOException("ACK: too many invalid responses");
+						}
 
-				if (i == 0) {
-					long time2 = System.nanoTime();
-					int rtt = (int) ((time2 - time1) / 1000000);
-					UDPClient.updateRtoWithRtt(rtt);
-				}
+						UDPClient.updateRtoWithTimeout();
 
-				break;
-			} catch (SocketTimeoutException e) {
-				if (++i == UDPBase.PACKET_RETRY_MAX) {
+						continue;
+					}
+
+					if (i == 0) {
+						long time2 = System.nanoTime();
+						int rtt = (int) ((time2 - time1) / 1000000);
+						UDPClient.updateRtoWithRtt(rtt);
+					}
+				} while (false);
+			} catch (IOException e) {
+				if (++i >= UDPBase.PACKET_RETRY_MAX) {
 					throw e;
 				}
 
 				UDPClient.updateRtoWithTimeout();
+
+				continue;
 			}
-		}
+		} while (false);
 	}
 
 	private static String formatSize(double size) {
@@ -187,13 +194,37 @@ class UDPClient extends UDPBase {
 		}
 
 		_socket = new DatagramSocket();
-		_socket.setSoTimeout(PACKET_TIMEOUT_MAX);
-		_targetAddress = new InetSocketAddress(args[0], Short.parseShort(args[1]));
+		_socket.setSoTimeout(_rto);
 
-		if (_targetAddress.isUnresolved()) {
-			System.err.println("[error] Cannot resolve: " + args[0] + ':' + args[1]);
+		try {
+			int port = Integer.parseInt(args[1]);
+			_targetAddress = new InetSocketAddress(args[0], port);
+		} catch (Exception e) {
+			System.err.println("[error] failed to parse host/port: " + e.getMessage());
 			return;
 		}
+
+		if (_targetAddress.isUnresolved()) {
+			System.err.println("[error] cannot resolve: " + args[0] + ':' + args[1]);
+			return;
+		}
+
+		final File file = new File(args[2]);
+
+		if (!file.isFile()) {
+			System.err.println("[error] file not found or not readable: " + args[2]);
+			return;
+		}
+
+		final String filename = file.getName();
+		final byte[] filenameData = filename.getBytes("UTF-8");
+
+		if (filenameData.length == 0 || filenameData.length > 255) {
+			System.err.println("[error] invalid Basename size: '" + filename + "'");
+			return;
+		}
+
+		_totalBytes = file.length();
 
 		final Enumeration<NetworkInterface> inets = NetworkInterface.getNetworkInterfaces();
 		int mtu = Integer.MAX_VALUE;
@@ -210,35 +241,13 @@ class UDPClient extends UDPBase {
 			}
 		}
 
-		if (mtu == Integer.MAX_VALUE) {
-			mtu = 1500;
-		}
-
-		/* As per RFC 791:
-		 * "Every internet module must be able to forward
-		 * a datagram of 68 octets without further fragmentation."
+		/*
+		 * RFC 1122 specifies 576 Byte (EMTU_R) as the minimum maximum
+		 * reassembly buffer size for IPv4 (and 1500 for IPv6).
 		 */
-		if (mtu < 68) {
-			System.err.println("[error] MTU smaller than required IPv4 minimum size.");
-			return;
+		if (mtu < 576 || mtu == Integer.MAX_VALUE) {
+			mtu = 576;
 		}
-
-		final File file = new File(args[2]);
-
-		if (!file.isFile()) {
-			System.err.println("[error] File not found or not readable: " + args[2]);
-			return;
-		}
-
-		final String filename = file.getName();
-		final byte[] filenameData = filename.getBytes("UTF-8");
-
-		if (filenameData.length > 255) {
-			System.err.println("[error] Filename too long: '" + filename + "'");
-			return;
-		}
-
-		_totalBytes = file.length();
 
 		// 40 Byte IPv6 Header size + 8 Byte UDP Header size
 		mtu -= 48;

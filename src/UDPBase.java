@@ -6,7 +6,7 @@ import java.util.Random;
 
 public class UDPBase {
 	protected static final int PACKET_ID_COUNT = 2;
-	
+
 	protected static final int PACKET_RETRY_MAX = 10;
 	protected static final int PACKET_TIMEOUT_MIN = 10;
 	protected static final int PACKET_TIMEOUT_MAX = 2500;
@@ -22,11 +22,11 @@ public class UDPBase {
 
 	protected static short _sessionId;
 	protected static byte _packetId;
-	
+
 	protected static byte packetId() {
 		return _packetId;
 	}
-	
+
 	protected static void resetPacketId() {
 		_packetId = 0;
 	}

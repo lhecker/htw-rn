@@ -147,7 +147,7 @@ class UDPServer extends UDPBase {
 
 		if (args.length > 1) {
 			try {
-				Matcher m = Pattern.compile("([\\d.]+)(%)?").matcher(args[1]);
+				final Matcher m = Pattern.compile("([\\d.]+)(%)?").matcher(args[1]);
 
 				if (!m.matches()) {
 					throw new Exception();
@@ -169,7 +169,7 @@ class UDPServer extends UDPBase {
 			}
 
 			try {
-				Matcher m = Pattern.compile("([\\d.]+)(ms)?").matcher(args[2]);
+				final Matcher m = Pattern.compile("([\\d.]+)(ms)?").matcher(args[2]);
 
 				if (!m.matches()) {
 					throw new Exception();
@@ -184,7 +184,7 @@ class UDPServer extends UDPBase {
 
 			if (args.length > 3) {
 				try {
-					Matcher m = Pattern.compile("([\\d.]+)(%|ms)?").matcher(args[3]);
+					final Matcher m = Pattern.compile("([\\d.]+)(%|ms)?").matcher(args[3]);
 
 					if (!m.matches()) {
 						throw new Exception();
@@ -192,7 +192,7 @@ class UDPServer extends UDPBase {
 
 					_packetDelayVariation = Double.parseDouble(m.group(1));
 
-					String suffix = m.group(2);
+					final String suffix = m.group(2);
 
 					if (suffix == null) {
 						if (_packetDelayVariation > 1.0) {
@@ -231,10 +231,23 @@ class UDPServer extends UDPBase {
 		while (true) {
 			_socket.setSoTimeout(0);
 			UDPServer.receive();
+
+			final InetSocketAddress targetAddress = (InetSocketAddress) _rxp.getSocketAddress();
+
+			if (targetAddress.equals(_targetAddress)) {
+				if (_rxd.limit() >= 4) {
+					short d_sessionId = _rxd.getShort();
+					byte d_packetId = _rxd.get();
+
+					if (d_sessionId == _sessionId && d_packetId == UDPServer.packetId()) {
+						UDPServer.sendACK(d_packetId);
+						continue;
+					}
+				}
+			}
+
+			_targetAddress = targetAddress;
 			_socket.setSoTimeout(PACKET_TIMEOUT_SERVER);
-
-			_targetAddress = (InetSocketAddress) _rxp.getSocketAddress();
-
 			UDPServer.resetPacketId();
 
 			/*
@@ -324,24 +337,24 @@ class UDPServer extends UDPBase {
 
 				cc.reset();
 
-				/*
-				 * Only allow packets from the current client,
-				 * ignoring interference from others.
-				 */
-				_socket.connect(_targetAddress);
-
 				while (remaining >= 0) {
 					final long time = System.nanoTime();
 					final long timeDiff = (time - lastValidPacketTime) / 1000000;
-					
+
 					if (timeDiff > PACKET_TIMEOUT_SERVER) {
 						throw new Exception("timeout");
 					}
-					
+
 					try {
 						UDPServer.receive();
 					} catch (SocketTimeoutException e) {
 						throw new Exception("timeout");
+					}
+
+					final InetSocketAddress d_address = (InetSocketAddress) _rxp.getSocketAddress();
+
+					if (!d_address.equals(_targetAddress)) {
+						continue;
 					}
 
 					/*
@@ -363,7 +376,7 @@ class UDPServer extends UDPBase {
 						UDPServer.sendACK(d_packetId);
 						continue;
 					}
-					
+
 					UDPServer.setPacketId(d_packetId);
 					lastValidPacketTime = time;
 
@@ -411,8 +424,6 @@ class UDPServer extends UDPBase {
 			} catch (Exception e) {
 				System.err.println("[error] data: " + e.getMessage());
 				file.delete();
-			} finally {
-				_socket.disconnect();
 			}
 		}
 	}
