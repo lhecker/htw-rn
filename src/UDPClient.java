@@ -18,6 +18,7 @@ class UDPClient extends UDPBase {
 	private static AtomicLong _finishedBytes = new AtomicLong();
 	private static long _previousBytes;
 	private static long _previousTime;
+	private static long _beginTime;
 	private static int _previousStatWidth;
 
 	protected static int _srtt = Integer.MAX_VALUE;
@@ -76,11 +77,11 @@ class UDPClient extends UDPBase {
 
 		long time1 = System.nanoTime();
 
-		do {
+		while (true) {
 			try {
 				_socket.send(txp);
 
-				do {
+				while (true) {
 					_rxd.clear();
 					_socket.receive(_rxp);
 					_rxd.limit(_rxp.getLength());
@@ -111,7 +112,11 @@ class UDPClient extends UDPBase {
 						int rtt = (int) ((time2 - time1) / 1000000);
 						UDPClient.updateRtoWithRtt(rtt);
 					}
-				} while (false);
+					
+					break;
+				}
+				
+				break;
 			} catch (IOException e) {
 				if (++i >= UDPBase.PACKET_RETRY_MAX) {
 					throw e;
@@ -121,7 +126,7 @@ class UDPClient extends UDPBase {
 
 				continue;
 			}
-		} while (false);
+		}
 	}
 
 	private static String formatSize(double size) {
@@ -141,10 +146,18 @@ class UDPClient extends UDPBase {
 	private static void showStats() {
 		final long time = System.nanoTime();
 		final long finishedBytes = _finishedBytes.get();
+
 		final double finishedDelta = finishedBytes - _previousBytes;
+		final double timeElapsed = time - _beginTime;
 		final double timeDelta = time - _previousTime;
-		final double speed = 1e9 * finishedDelta / timeDelta;
+
+		/*
+		 * speed is the average between the Byte/s
+		 * since the upload started and the Byte/s
+		 * since the last second.
+		 */
 		final double percent = (double) finishedBytes / _totalBytes;
+		final double speed = percent == 100.0 ? 1e9 * (finishedBytes / timeElapsed) : 5e8 * (finishedBytes / timeElapsed + finishedDelta / timeDelta);
 
 		final int barWidth = (int) Math.round(percent * 50);
 		final char[] barData = new char[50];
@@ -190,7 +203,7 @@ class UDPClient extends UDPBase {
 	public static void main(String args[]) throws Exception {
 		if (args.length != 3) {
 			System.out.println("Usage: client-udp <host> <port> <filepath>");
-			return;
+			System.exit(1);
 		}
 
 		_socket = new DatagramSocket();
@@ -201,19 +214,19 @@ class UDPClient extends UDPBase {
 			_targetAddress = new InetSocketAddress(args[0], port);
 		} catch (Exception e) {
 			System.err.println("[error] failed to parse host/port: " + e.getMessage());
-			return;
+			System.exit(2);
 		}
 
 		if (_targetAddress.isUnresolved()) {
 			System.err.println("[error] cannot resolve: " + args[0] + ':' + args[1]);
-			return;
+			System.exit(2);
 		}
 
 		final File file = new File(args[2]);
 
 		if (!file.isFile()) {
 			System.err.println("[error] file not found or not readable: " + args[2]);
-			return;
+			System.exit(3);
 		}
 
 		final String filename = file.getName();
@@ -260,7 +273,8 @@ class UDPClient extends UDPBase {
 		try (final FileInputStream fin = new FileInputStream(file)) {
 			System.out.print("Connecting to " + _targetAddress.getAddress().getHostAddress() + ":" + _targetAddress.getPort() + "... ");
 
-			_previousTime = System.nanoTime();
+			_beginTime = System.nanoTime();
+			_previousTime = _beginTime;
 
 			// the handshake header fields
 			txd = ByteBuffer.allocate(2 + 1 + 5 + 8 + 2 + filenameData.length + 4);
@@ -331,11 +345,15 @@ class UDPClient extends UDPBase {
 			UDPClient.showStats();
 			System.out.println();
 		} catch (Exception e) {
+			timer.cancel();
+			
 			System.out.println();
 			System.out.println();
 			System.err.println("[error] " + e.getMessage());
-		} finally {
-			timer.cancel();
+			
+			System.exit(4);
 		}
+		
+		timer.cancel();
 	}
 }

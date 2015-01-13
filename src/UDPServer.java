@@ -234,6 +234,7 @@ class UDPServer extends UDPBase {
 
 			final InetSocketAddress targetAddress = (InetSocketAddress) _rxp.getSocketAddress();
 
+			// check if this is a resent packet due to a lost ACK by the previous client
 			if (targetAddress.equals(_targetAddress)) {
 				if (_rxd.limit() >= 4) {
 					short d_sessionId = _rxd.getShort();
@@ -250,86 +251,93 @@ class UDPServer extends UDPBase {
 			_socket.setSoTimeout(PACKET_TIMEOUT_SERVER);
 			UDPServer.resetPacketId();
 
-			/*
-			 * The handshake header fields:
-			 *   short h_sessionId;
-			 *   byte h_packetId;
-			 *   long h_length;
-			 *   short h_filenameLength;
-			 *   byte[] h_filename;
-			 *   int h_crc32;
-			 */
+			File file;
+			short h_sessionId;
+			byte h_packetId;
+			long h_length;
+			short h_filenameLength;
+			byte[] h_filename;
+			int h_crc32;
 
-			/*
-			 * The handshake packet is in every possible case at least 23 Bytes
-			 * large. (This includes +1 for the assertion, that the filename is
-			 * at least 1 Byte long.)
-			 */
-			if (_rxd.limit() < 23) {
-				System.err.println("[error] handshake: too small");
-				continue mainloop;
-			}
+			try {
+				/*
+				 * The handshake header fields:
+				 *   short h_sessionId;
+				 *   byte h_packetId;
+				 *   long h_length;
+				 *   short h_filenameLength;
+				 *   byte[] h_filename;
+				 *   int h_crc32;
+				 */
 
-			final short h_sessionId = _rxd.getShort();
-			final byte h_packetId = _rxd.get();
-
-			// as per specification the handshake must have a packet ID of 0
-			if (h_packetId != UDPServer.packetId()) {
-				System.err.println("[error] handshake: invalid packet id");
-				continue mainloop;
-			}
-
-			for (int i = 0; i < start.length; i++) {
-				if (_rxd.get() != start[i]) {
-					System.err.println("[error] handshake: invalid \"Start\" signature");
-					continue mainloop;
+				/*
+				 * The handshake packet is in every possible case at least 23 Bytes
+				 * large. (This includes +1 for the assertion, that the filename is
+				 * at least 1 Byte long.)
+				 */
+				if (_rxd.limit() < 23) {
+					throw new Exception("too small");
 				}
-			}
 
-			final long h_length = _rxd.getLong();
+				h_sessionId = _rxd.getShort();
+				h_packetId = _rxd.get();
 
-			if (h_length <= 0) {
-				System.err.println("[error] handshake: invalid (zero) or too large (greater than Long.MAX_VALUE) length field");
+				// as per specification the handshake must have a packet ID of 0
+				if (h_packetId != UDPServer.packetId()) {
+					throw new Exception("invalid packet id");
+				}
+
+				for (int i = 0; i < start.length; i++) {
+					if (_rxd.get() != start[i]) {
+						throw new Exception("invalid \"Start\" signature");
+					}
+				}
+
+				h_length = _rxd.getLong();
+
+				if (h_length <= 0) {
+					throw new Exception("invalid (zero) or too large (greater than Long.MAX_VALUE) length field");
+				}
+
+				h_filenameLength = _rxd.getShort();
+
+				/*
+				 * Check remaining() if the filename is actually fully present,
+				 * including 4 additional Bytes for the CRC32.
+				 */
+				if (h_filenameLength <= 0 || _rxd.remaining() - 4 < h_filenameLength) {
+					throw new Exception("invalid filename field");
+				}
+
+				h_filename = new byte[h_filenameLength];
+				_rxd.get(h_filename);
+
+				cc.reset();
+				cc.update(_rxd.array(), 0, _rxd.position());
+
+				h_crc32 = _rxd.getInt();
+
+				/*
+				 * Casting cc.getValue() down to int is very important.
+				 * cc.getValue() will return some positive value [0, 2^32).
+				 * _rxd.getInt() will return the same value (bitwise), but in a signed representation.
+				 * Thus we can just cast the first one down to an int, to get a correct comparison.
+				 * If we don't, the compiler would promote the (int) h_crc32 to an (long),
+				 * which turns (int)-1 to (long)-1, instead of an positive value [0, 2^32).
+				 */
+				if (h_crc32 != (int) cc.getValue()) {
+					throw new Exception("invalid checksum");
+				}
+
+				file = UDPServer.createFileForFilenameWish(h_filename);
+				_sessionId = h_sessionId;
+
+				UDPServer.sendACK(h_packetId);
+			} catch (Exception e) {
+				System.err.println("[error] handshake: " + e.getMessage());
+				_targetAddress = null;
 				continue mainloop;
 			}
-
-			final short h_filenameLength = _rxd.getShort();
-
-			/*
-			 * Check remaining() if the filename is actually fully present,
-			 * including 4 additional Bytes for the CRC32.
-			 */
-			if (h_filenameLength <= 0 || _rxd.remaining() - 4 < h_filenameLength) {
-				System.err.println("[error] handshake: invalid filename field");
-				continue mainloop;
-			}
-
-			final byte[] h_filename = new byte[h_filenameLength];
-			_rxd.get(h_filename);
-
-			cc.reset();
-			cc.update(_rxd.array(), 0, _rxd.position());
-
-			final int h_crc32 = _rxd.getInt();
-
-			/*
-			 * Casting cc.getValue() down to int is very important.
-			 * cc.getValue() will return some positive value [0, 2^32).
-			 * _rxd.getInt() will return the same value (bitwise), but in a signed representation.
-			 * Thus we can just cast the first one down to an int, to get a correct comparison.
-			 * If we don't, the compiler would promote the (int) h_crc32 to an (long),
-			 * which turns (int)-1 to (long)-1, instead of an positive value [0, 2^32).
-			 */
-			if (h_crc32 != (int) cc.getValue()) {
-				System.err.println("[error] handshake: invalid checksum");
-				continue mainloop;
-			}
-
-			_sessionId = h_sessionId;
-
-			UDPServer.sendACK(h_packetId);
-
-			final File file = UDPServer.createFileForFilenameWish(h_filename);
 
 			try (final FileOutputStream fout = new FileOutputStream(file)) {
 				long remaining = h_length;
