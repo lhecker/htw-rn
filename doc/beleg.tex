@@ -45,15 +45,6 @@
 
 %  %  %  %  Hauptteil  %  %  %  %
 
-\chapter{Zustandsdiagramm}
-
-\begin{figure}[hbp]
-	\centering
-	%\includegraphics[width=1\linewidth]{UML/Export/erm.png}
-	\caption{Zustandsdiagramm einer Dateiübertragung}
-	\label{ERM}
-\end{figure}
-
 \chapter{Funktionsweise des Servers}
 
 Nach der Erstellung eines UDP Sockets befindet sich der Server im sog. \textit{main loop} und wartet dort zu Beginn bis ein Paket empfangen wird in der \textit{receive} Methode des Sockets.
@@ -93,6 +84,12 @@ Ein Delay von \textit{100ms} führt somit zu einer RTT von \textit{200ms}.
 Zuletzt ist es mittels Loss möglich Pakete mit einer bestimmten Wahrscheinlichkeit nicht zu empfangen, bzw. zu senden.
 Wurde entschieden ob ein Paket als Loss gilt wird dieses einfach ignoriert und im Falle eines zu sendenden ACKs nichts unternommen, bzw. beim empfangen auf das nächste gewartet. \newline
 
+\begin{figure}
+	\centering
+	\includegraphics[width=\textwidth,height=\textheight,keepaspectratio]{assets/UDPServer.png}
+	\caption{Zustandsdiagramm einer Dateiübertragung}
+\end{figure}
+
 \chapter{Funktionsweise des Clients}
 
 Zunächst ist festzulegen, dass der Client bei einem Fehlerfall die Ausführung abbricht.
@@ -130,5 +127,11 @@ Dem Datenpaket wird nun die größtmögliche Menge an Daten, welche sequentiell 
 Dies geschieht unter Beachtung der bereits ermittelten maximalen Payloadgröße und der Bedingung des Protokolls, dass die CRC32 Prüfsumme am Ende der Datei nicht auf mehrere Pakete aufgeteilt werden darf.
 Die jeweilige Menge an Daten werden nun auf eine CRC32 Prüfsumme aufgerechnet.
 Wurde die gesamte Datei in Datenpakete aufgeteilt wird nun die berechnete CRC32 Prüfsumme an das Ende des Paketes angehangen --- es ist hierbei auch möglich dass das finale Paket nur mit CRC32 und ohne Daten gesendet wird.
+
+\begin{figure}
+	\centering
+	\includegraphics[width=\textwidth,height=\textheight,keepaspectratio]{assets/UDPClient.png}
+	\caption{Zustandsdiagramm einer Dateiübertragung}
+\end{figure}
 
 \end{document}

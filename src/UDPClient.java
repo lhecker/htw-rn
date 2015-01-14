@@ -112,10 +112,10 @@ class UDPClient extends UDPBase {
 						int rtt = (int) ((time2 - time1) / 1000000);
 						UDPClient.updateRtoWithRtt(rtt);
 					}
-					
+
 					break;
 				}
-				
+
 				break;
 			} catch (IOException e) {
 				if (++i >= UDPBase.PACKET_RETRY_MAX) {
@@ -326,6 +326,7 @@ class UDPClient extends UDPBase {
 						cc.update(txd.array(), txd.position(), n);
 						txd.position(txd.position() + n);
 					} else if (remaining >= 4) {
+						// the CRC32 will be appended below, outside of the loop
 						break;
 					}
 				}
@@ -346,14 +347,14 @@ class UDPClient extends UDPBase {
 			System.out.println();
 		} catch (Exception e) {
 			timer.cancel();
-			
+
 			System.out.println();
 			System.out.println();
 			System.err.println("[error] " + e.getMessage());
-			
+
 			System.exit(4);
 		}
-		
+
 		timer.cancel();
 	}
 }
