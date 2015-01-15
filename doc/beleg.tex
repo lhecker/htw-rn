@@ -134,4 +134,95 @@ Wurde die gesamte Datei in Datenpakete aufgeteilt wird nun die berechnete CRC32 
 	\caption{Zustandsdiagramm einer Dateiübertragung}
 \end{figure}
 
+\chapter{Theoretische und praktische Übertragungsgeschwindigkeit}
+
+\section{Theoretische Maximalwerte}
+
+Die Rahmenbedingungen für die theoretische Betrachtung wären die vermutlichen Parameter einer Verbindung zwischen einem Client auf \textit{ilux150} und dem 10\%/10ms Server auf \textit{idefix} der HTW Dresden.
+
+\begin{itemize}
+	\item Paketlänge \(L = 1500Byte\) (dies entspricht der MTU des Netzwerkes)
+	\item Datenrate \(r_{b} = 1 GBit/s\)
+	\item Ausbreitungsverzögerung \(T_{a} = 10ms\) (sowohl Hin- als auch Rückkanal)
+	\item Verlustwahrscheinlichkeit \(P_{v} = 10\%\) (sowohl Hin- als auch Rückkanal)
+\end{itemize}
+
+Daraus ergeben sich folgende Parameter:
+\begin{align*}
+	T_{p} & = \frac{L}{r_{b}} = 12\mu s                                          \\
+	k     & = L - IP\textnormal{-}Header - UDP\textnormal{-}Header - Data-Header \\
+	      & = 1500Byte - 20Byte - 8Byte - 3Byte = 1469Byte                       \\
+	R     & = \frac{k}{L} = \frac{1469Bytes}{1500Byte} \approx 0,98
+\end{align*}
+
+\newpage
+
+Unter Einbezug der Übertragungsverzögerung des Bestätigungspaketes \textit{ACK}
+\begin{align*}
+	T_{ACK} & = \frac{L_{ACK}}{r_{b}} = \frac{31Byte}{1GBit/s} = 248ns
+\end{align*}
+
+ergibt sich hieraus die Effizienz \(\eta_{sw}\) und die Übertragungsrate \(r_{eff}\)
+\begin{align*}
+	\eta_{sw} & = \frac{T_{p} \times (1 - P_{v})^2 \times R}{T_{p} + 2 \times T_{a} + T_{ACK}}    \\
+	          & = \frac{12\mu s \times (1 - 10\%)^2 \times 0,98}{12\mu s + 2 \times 10ms + 248ns} \\
+	          & \approx 4,757 \times 10^-4                                                        \\
+	r_{eff}   & = r_{b} \times \eta_{sw}                                                          \\
+	          & \approx 475,7kBit/s
+\end{align*}
+
+\newpage
+
+\section{Praktische Geschwindigkeit}
+
+In der Praxis ließen sich stark schwankende Geschwindigkeiten beobachten.
+Bei Tests zwischen einem Client auf \textit{ilux150} und dem 10\%/10ms Server auf \textit{idefix} schwankten so die Ergebnisse zwischen rund \(80kBit/s\) und \(800kBit/s\).
+Am häufigsten ließ sich jedoch das folgende Ergebnis mit ca. \(789kBit/s\) reproduzieren:
+
+{
+\scriptsize
+\begin{verbatim}
+Thu Jan 15 12:59:47 CET 2015
+Server v1.05: Waiting for new connection...
+Server: Start packet received
+IP / Port: /141.56.132.150 48501
+Start ID:-24587, Length: 4932736 Bytes, Filename: sublime_text
+CRC Data StartPacket:c9de66ce CRC field:c9de66ce
+Thu Jan 15 13:18:03 CET 2015
+Server: All data received
+Server: CRC (received data): 8f7290c3
+Server: CRC (source data)  : 8f7290c3
+CRC OK
+Server: Transmission time: 50.0s, data rate: 789.23776 kbit/s
+Server Info: Server receive timed out - Finish...
+\end{verbatim}
+}
+
+Eine Erklärung für solch hohen praktischen Ergebnissen über den theoretischen Maxmimum kann leider nicht ohne Weiteres geliefert werden.
+Da man aber annehmen kann, dass der Client bei einer \textit{vollständigen} Übertragung die simulierte Paketverzögerung des Servers nicht austricksen können sollte, könnte dies durch einen Bug in der Serverimplementierung verursacht worden sein. \\
+
+Eigentlich sollten jedoch die Werte etwas unter dem theoretischen Maximum liegen.
+Dies könnte man dann z.B. dadurch begründen, dass der \textit{idefix} Server mit einem Paketverzögerung von \(10ms\) konfiguriert ist, jedoch noch zusätzlich eine Verzögerung durch das Ethernet zwischen \textit{idefix} und \textit{ilux150} existiert.
+Des Weiteren sollte die Berechnung des Retransmission Timeouts (\textit{RTO}) bei Paketverlust inoptimal sein.
+Die Paketverzögerung ist nämlich bei den hier durchgeführten Tests relativ stabil -- der RTO wird jedoch bei Timeouts verdoppelt.
+Bei 2 oder mehr aufeinanderfolgenden Paketverlusten führt dies somit zu starken Verzögerungen in der Erkennung des Verlustes, obwohl die Paketverzögerung weiterhin stabil bei z.B. \(10ms\) bleibt.
+Die für diese Belegarbeit entwickelte Software addiert deshalb bei den ersten beiden Timeouts nur \textit{RTTVAR} auf \textit{RTO}, wodurch eine kleine Performanceverbesserung eintrat.
+Zuletzt wurde hier ein im Ethernet zwischen \textit{ilux150} und \textit{idefix} auftretender Paketverlust ebenfalls nicht betrachtet.
+
+\chapter{Verbesserungsvorschläge für das Protokoll}
+
+Die Header für den Handshake als auch für Datenpakete sollten mit der selben Struktur beginnen und ein Feld für den Typ des Pakets enthalten.
+Um zu Verhindern dass eine Übertragung von einem fremden Client gestohlen wird, muss getestet werden ob es sich um den gleichen Absender handelt, der auch den Handshake durchgeführt hat.
+Da \(2^16\) parallele Sessions eines Client unwahrscheinlich sind könnte man also die Sessionnummer auf \(8Bit\) limitieren.
+Die nun übrigen \(8Bit\) könnte man dann als Typ-Feld verwenden.
+Dieses würde nun die Art der Nachricht identifizieren, womit man nun ein Handshake eindeutig von einem Datenpaket unterscheiden kann.
+Das ist umso wichtiger wenn man bedenkt, dass theoretisch ein Datenpaket existiert, welches gleichzeitig ein valider Handshake ist. \\
+
+Des Weiteren wäre es günstig, wenn das Feld für die Paketnummer mindestens 4 verschiedene Zustände erlauben würde.
+Dadurch wäre der Server in der Lage sowohl ein voheriges, also ein vom Client mehrfach gesendetes Paket, sowie das aktuelle Paket zu erkennen.
+Eine vorvorherige, sowie eine zukünftige Paketnummer könnten somit als Fehler zuverlässlich erkannt werden. \\
+
+Darüber hinaus könnte man selbstverständlich jegliche Eigenschaften des TCP Protokolls als Verbesserungsvorschläge unterbreiten.
+Hierunter fällt unter anderem, dass ein Sliding Window eine höhere Performance erreichen würde als Stop-and-Wait.
+
 \end{document}

@@ -33,27 +33,30 @@ class UDPClient extends UDPBase {
 		}
 
 		/*
-		 * This implements sth. similiar to the Retransmission
+		 * This implements sth. similar to the Retransmission
 		 * Timer specified in RFC 6298 for TCP.
 		 */
 		if (_srtt == Integer.MAX_VALUE) {
 			_rttvar = rtt / 2;
 			_srtt = rtt;
-			_rto = _srtt + 4 * _rttvar;
 		} else {
 			_rttvar = (3 * _rttvar + Math.abs(_srtt - rtt)) / 4;
 			_srtt = (7 * _srtt + rtt) / 8;
-			_rto = _srtt + 4 * _rttvar;
 		}
 
-		// an offset to fight unprecise timers
-		_rto += PACKET_TIMEOUT_MIN;
+		_rto = _srtt + 4 * _rttvar;
 
 		if (_rto > PACKET_TIMEOUT_MAX) {
 			_rto = PACKET_TIMEOUT_MAX;
 		}
 
 		try {
+			/*
+			 * TODO:
+			 * SO_RCVTIMEO should specify the minimum amount of time
+			 * to sleep, but are there bugs out there in the wild?
+			 * If so, the algorithm wouldn't work.
+			 */
 			_socket.setSoTimeout(_rto);
 		} catch (Exception e) {
 		}
