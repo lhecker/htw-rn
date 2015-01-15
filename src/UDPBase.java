@@ -1,7 +1,10 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.nio.ByteBuffer;
+import java.util.Date;
+import java.util.Enumeration;
 import java.util.Random;
 
 public class UDPBase {
@@ -22,6 +25,51 @@ public class UDPBase {
 
 	protected static short _sessionId;
 	protected static byte _packetId;
+
+	protected static void log(String msg) {
+		System.out.printf("%tF %<tT ", new Date());
+		System.out.println(msg);
+	}
+
+	protected static void error(String msg) {
+		System.err.printf("%tF %<tT ", new Date());
+		System.err.println(msg);
+	}
+
+	protected static int getMTU() {
+		int mtu = Integer.MAX_VALUE;
+
+		try {
+			Enumeration<NetworkInterface> inets = NetworkInterface.getNetworkInterfaces();
+
+			/*
+			 * TODO: Improve the precision of mtu by getting the MTU
+			 *  of the NIC the packets are going to be sent on.
+			 */
+			while (inets.hasMoreElements()) {
+				NetworkInterface inet = inets.nextElement();
+
+				if (inet.isUp()) {
+					int newMtu = inet.getMTU();
+
+					if (newMtu != -1 && newMtu < mtu) {
+						mtu = newMtu;
+					}
+				}
+			}
+		} catch (Exception e) {
+		}
+
+		/*
+		 * RFC 1122 specifies 576 Byte (EMTU_R) as the minimum maximum
+		 * reassembly buffer size for IPv4 (and 1500 for IPv6).
+		 */
+		if (mtu == Integer.MAX_VALUE || mtu < 576) {
+			mtu = 576;
+		}
+
+		return mtu;
+	}
 
 	protected static byte packetId() {
 		return _packetId;

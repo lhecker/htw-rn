@@ -4,10 +4,8 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
-import java.net.NetworkInterface;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.Enumeration;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicLong;
@@ -34,6 +32,10 @@ class UDPClient extends UDPBase {
 			return;
 		}
 
+		/*
+		 * This implements sth. similiar to the Retransmission
+		 * Timer specified in RFC 6298 for TCP.
+		 */
 		if (_srtt == Integer.MAX_VALUE) {
 			_rttvar = rtt / 2;
 			_srtt = rtt;
@@ -44,6 +46,7 @@ class UDPClient extends UDPBase {
 			_rto = _srtt + 4 * _rttvar;
 		}
 
+		// an offset to fight unprecise timers
 		_rto += PACKET_TIMEOUT_MIN;
 
 		if (_rto > PACKET_TIMEOUT_MAX) {
@@ -56,12 +59,23 @@ class UDPClient extends UDPBase {
 		}
 	}
 
-	protected static void updateRtoWithTimeout() {
-		_rto *= 2;
+	protected static void updateRtoWithTimeout(int factor) {
+		if (factor < 0) {
+			return;
+		}
 
-		if (_rto < PACKET_TIMEOUT_MIN) {
-			_rto = PACKET_TIMEOUT_MIN;
-		} else if (_rto > PACKET_TIMEOUT_MAX) {
+		/*
+		 * Grow linear for the first 2 losses and after that exponential.
+		 * This should give us a small performance boost
+		 * in LANs where delays are pretty stable.
+		 */
+		if (factor < 3) {
+			_rto += factor * Math.max(1, _rttvar);
+		} else {
+			_rto *= 2;
+		}
+
+		if (_rto > PACKET_TIMEOUT_MAX) {
 			_rto = PACKET_TIMEOUT_MAX;
 		}
 
@@ -102,7 +116,7 @@ class UDPClient extends UDPBase {
 							throw new IOException("ACK: too many invalid responses");
 						}
 
-						UDPClient.updateRtoWithTimeout();
+						UDPClient.updateRtoWithTimeout(i);
 
 						continue;
 					}
@@ -122,7 +136,7 @@ class UDPClient extends UDPBase {
 					throw e;
 				}
 
-				UDPClient.updateRtoWithTimeout();
+				UDPClient.updateRtoWithTimeout(i);
 
 				continue;
 			}
@@ -213,19 +227,19 @@ class UDPClient extends UDPBase {
 			int port = Integer.parseInt(args[1]);
 			_targetAddress = new InetSocketAddress(args[0], port);
 		} catch (Exception e) {
-			System.err.println("[error] failed to parse host/port: " + e.getMessage());
+			UDPClient.error("[error] failed to parse host/port: " + e.getMessage());
 			System.exit(2);
 		}
 
 		if (_targetAddress.isUnresolved()) {
-			System.err.println("[error] cannot resolve: " + args[0] + ':' + args[1]);
+			UDPClient.error("[error] cannot resolve: " + args[0] + ':' + args[1]);
 			System.exit(2);
 		}
 
 		final File file = new File(args[2]);
 
 		if (!file.isFile()) {
-			System.err.println("[error] file not found or not readable: " + args[2]);
+			UDPClient.error("[error] file not found or not readable: " + args[2]);
 			System.exit(3);
 		}
 
@@ -233,37 +247,14 @@ class UDPClient extends UDPBase {
 		final byte[] filenameData = filename.getBytes("UTF-8");
 
 		if (filenameData.length == 0 || filenameData.length > 255) {
-			System.err.println("[error] invalid Basename size: '" + filename + "'");
+			UDPClient.error("[error] invalid Basename size: '" + filename + "'");
 			return;
 		}
 
 		_totalBytes = file.length();
 
-		final Enumeration<NetworkInterface> inets = NetworkInterface.getNetworkInterfaces();
-		int mtu = Integer.MAX_VALUE;
-
-		/*
-		 *  TODO: Improve the precision of mtu by getting the MTU
-		 *  of the NIC the packets are going to be sent on.
-		 */
-		while (inets.hasMoreElements()) {
-			int newMtu = inets.nextElement().getMTU();
-
-			if (newMtu != -1 && newMtu < mtu) {
-				mtu = newMtu;
-			}
-		}
-
-		/*
-		 * RFC 1122 specifies 576 Byte (EMTU_R) as the minimum maximum
-		 * reassembly buffer size for IPv4 (and 1500 for IPv6).
-		 */
-		if (mtu < 576 || mtu == Integer.MAX_VALUE) {
-			mtu = 576;
-		}
-
 		// 40 Byte IPv6 Header size + 8 Byte UDP Header size
-		mtu -= 48;
+		int payloadSize = UDPClient.getMTU() - (40 + 8);
 
 		// Java's CRC32 uses the IEEE 0x04C11DB7 polynomial
 		final CRC32 cc = new CRC32();
@@ -294,7 +285,7 @@ class UDPClient extends UDPBase {
 			System.out.printf("connected.%nSending: '%s'%nLength: %,d (%s)%n%n", filename, _totalBytes, UDPClient.formatSize(_totalBytes));
 
 			cc.reset();
-			txd = ByteBuffer.allocate(mtu);
+			txd = ByteBuffer.allocate(payloadSize);
 
 			timer.schedule(new TimerTask() {
 				@Override
@@ -350,7 +341,7 @@ class UDPClient extends UDPBase {
 
 			System.out.println();
 			System.out.println();
-			System.err.println("[error] " + e.getMessage());
+			UDPClient.error("[error] " + e.getMessage());
 
 			System.exit(4);
 		}

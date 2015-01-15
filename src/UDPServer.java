@@ -140,7 +140,7 @@ class UDPServer extends UDPBase {
 				throw new Exception();
 			}
 		} catch (Exception e) {
-			System.err.println("port outside of valid range [0, 65535]");
+			UDPServer.error("[error] port outside of valid range [0, 65535]");
 			UDPServer.printHelp();
 			System.exit(2);
 		}
@@ -163,7 +163,7 @@ class UDPServer extends UDPBase {
 					throw new Exception();
 				}
 			} catch (Exception e) {
-				System.err.println("loss outside of valid range [0,1]");
+				UDPServer.error("[error] loss outside of valid range [0,1]");
 				UDPServer.printHelp();
 				System.exit(2);
 			}
@@ -177,7 +177,7 @@ class UDPServer extends UDPBase {
 
 				_packetDelay = Double.parseDouble(m.group(1));
 			} catch (Exception e) {
-				System.err.println("delay outside of valid range [0,∞)ms");
+				UDPServer.error("[error] delay outside of valid range [0,∞)ms");
 				UDPServer.printHelp();
 				System.exit(2);
 			}
@@ -208,7 +208,7 @@ class UDPServer extends UDPBase {
 						_packetDelayVariation = (_packetDelayVariation / 100.0) * _packetDelay;
 					}
 				} catch (Exception e) {
-					System.err.println("variation outside of valid range [0,∞)ms, [0,1], or [0,100]%");
+					UDPServer.error("[error] variation outside of valid range [0,∞)ms, [0,1], or [0,100]%");
 					UDPServer.printHelp();
 					System.exit(2);
 				}
@@ -217,9 +217,17 @@ class UDPServer extends UDPBase {
 
 		try {
 			_socket = new DatagramSocket(port);
+
+			int bufferSize = PACKET_RETRY_MAX * UDPServer.getMTU();
+			_socket.setReceiveBufferSize(bufferSize);
+
+			int actualBufferSize = _socket.getReceiveBufferSize();
+
+			if (actualBufferSize < bufferSize) {
+				UDPServer.log(String.format("[warning] SO_RCVBUF (%d) smaller than recommended size (%d). Packets might get lost.%n", actualBufferSize, bufferSize));
+			}
 		} catch (Exception e) {
-			System.err.println("Failed to create an DatagramSocket!");
-			System.err.println(e.getMessage());
+			UDPServer.error("[error] Failed to create an DatagramSocket!" + e.getMessage());
 			System.exit(3);
 		}
 
@@ -334,10 +342,12 @@ class UDPServer extends UDPBase {
 
 				UDPServer.sendACK(h_packetId);
 			} catch (Exception e) {
-				System.err.println("[error] handshake: " + e.getMessage());
+				UDPServer.error("[error] handshake: " + e.getMessage());
 				_targetAddress = null;
 				continue mainloop;
 			}
+
+			UDPServer.log("[log] creating file '" + file.getName() + "'");
 
 			try (final FileOutputStream fout = new FileOutputStream(file)) {
 				long remaining = h_length;
@@ -429,8 +439,11 @@ class UDPServer extends UDPBase {
 
 					UDPServer.sendACK(d_packetId);
 				}
+
+				UDPServer.log("[log] finished file '" + file.getName() + "'");
 			} catch (Exception e) {
-				System.err.println("[error] data: " + e.getMessage());
+				UDPServer.error("[error] data: " + e.getMessage());
+				UDPServer.log("[log] deleted file '" + file.getName() + "'");
 				file.delete();
 			}
 		}
