@@ -136,39 +136,38 @@ Wurde die gesamte Datei in Datenpakete aufgeteilt wird nun die berechnete CRC32 
 
 \chapter{Theoretische und praktische Geschwindigkeiten}
 
-\section{Theoretische Maximalwerte}
+\section{Theoretische Geschwindigkeit}
 
-Die Rahmenbedingungen für die theoretische Betrachtung wären die vermutlichen Parameter einer Verbindung zwischen einem Client auf \textit{ilux150} und dem 10\%/10ms Server auf \textit{idefix} der HTW Dresden.
-
+In den folgenden Berechnungen wird eine Verbindung zwischen \textit{ilux150} und dem 10\%/10ms Server auf \textit{idefix} der HTW Dresden mit folgenden Eigenschaften angenommen:
 \begin{itemize}
-	\item Paketlänge \(L = 1500Byte\) (dies entspricht der MTU des Netzwerkes)
+	\item MTU \(L = 1500Byte\)
+	\item Länge des IP-Headers \(L_{IP} = 20Byte\)
+	\item Länge des UDP-Headers \(L_{UDP} = 8Byte\)
+	\item Länge des Datenpaket-Headers \(L_{DATA} = 3Byte\)
 	\item Datenrate \(r_{b} = 1 GBit/s\)
-	\item Ausbreitungsverzögerung \(T_{a} = 10ms\) (sowohl Hin- als auch Rückkanal)
-	\item Verlustwahrscheinlichkeit \(P_{v} = 10\%\) (sowohl Hin- als auch Rückkanal)
+	\item Ausbreitungsverzögerung \(T_{a} = 10ms\) (in beide Richtungen)
+	\item Verlustwahrscheinlichkeit \(P_{v} = 10\%\) (in beide Richtungen)
 \end{itemize}
-
-Daraus ergeben sich folgende Parameter:
-\begin{align*}
-	T_{p} & = \frac{L}{r_{b}} = 12\mu s                                          \\
-	k     & = L - IP\textnormal{-}Header - UDP\textnormal{-}Header - Data-Header \\
-	      & = 1500Byte - 20Byte - 8Byte - 3Byte = 1469Byte                       \\
-	R     & = \frac{k}{L} = \frac{1469Bytes}{1500Byte} \approx 0,98
-\end{align*}
 
 \newpage
 
-Unter Einbezug der Übertragungsverzögerung des Bestätigungspaketes \textit{ACK}
+\noindent
+Daraus ergeben sich folgende Parameter:
 \begin{align*}
-	T_{ACK} & = \frac{L_{ACK}}{r_{b}} = \frac{31Byte}{1GBit/s} = 248ns
+	T_{p}   & = \frac{L}{r_{b}} = 12\mu s                              \\
+	T_{ACK} & = \frac{L_{ACK}}{r_{b}} = \frac{31Byte}{1GBit/s} = 248ns \\
+	k       & = L - L_{IP} - L_{UDP} - L_{DATA}                        \\
+	        & = 1500Byte - 20Byte - 8Byte - 3Byte = 1469Byte           \\
+	R       & = \frac{k}{L} = \frac{1469Bytes}{1500Byte} \approx 0,98  \\
 \end{align*}
 
-ergibt sich hieraus die Effizienz \(\eta_{sw}\) und die Übertragungsrate \(r_{eff}\)
+\noindent
+Die Effizienz \(\eta_{sw}\) und die Übertragungsrate \(r_{sw}\) können daraus wie folgt berechnet werden:
 \begin{align*}
-	\eta_{sw} & = \frac{T_{p} \times (1 - P_{v})^2 \times R}{T_{p} + 2 \times T_{a} + T_{ACK}}    \\
-	          & = \frac{12\mu s \times (1 - 10\%)^2 \times 0,98}{12\mu s + 2 \times 10ms + 248ns} \\
-	          & \approx 4,757 \times 10^-4                                                        \\
-	r_{eff}   & = r_{b} \times \eta_{sw}                                                          \\
-	          & \approx 475,7kBit/s
+	\eta_{sw} & = \frac{T_{p} \times R \times (1 - P_{v})^2}{T_{p} + 2 \times T_{a} + T_{ACK}}    \\
+	          & = \frac{12\mu s \times 0,98 \times (1 - 10\%)^2}{12\mu s + 2 \times 10ms + 248ns} \\
+	          & \approx 4,757 \times 10^{-4}                                                      \\
+	r_{sw}    & = r_{b} \times \eta_{sw} \approx \underline{\underline{475,7kBit/s}}              \\
 \end{align*}
 
 \newpage
