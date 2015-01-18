@@ -104,7 +104,7 @@ class UDPServer extends UDPBase {
 	}
 
 	private static void printHelp() {
-		System.out.println("Usage: server-udp <port> [<loss> <delay> [<veriation>]]");
+		System.out.println("Usage: server-udp <port> [<loss> <delay> [<variation>]]");
 		System.out.println("  <port>       The port number the server should listen on.");
 		System.out.println("               This number must be between 0 and 65535");
 		System.out.println("               A value of 0 tells the application to choose a random port.");
